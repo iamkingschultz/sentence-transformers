@@ -20,7 +20,7 @@ import math
 import queue
 import tempfile
 from distutils.dir_util import copy_tree
-
+from .google_chat_alert import GoogleChatAlert
 from . import __MODEL_HUB_ORGANIZATION__
 from .evaluation import SentenceEvaluator
 from .util import import_from_string, batch_to_device, fullname, snapshot_download
@@ -593,7 +593,8 @@ class SentenceTransformer(nn.Sequential):
             checkpoint_path: str = None,
             checkpoint_save_steps: int = 500,
             checkpoint_save_total_limit: int = 0,
-            log_losses_at_each_step=False
+            log_losses_at_each_step=False,
+            alert_webhook: str = None,
             ):
         """
         Train the model with the given training objective and return model training history
@@ -623,7 +624,7 @@ class SentenceTransformer(nn.Sequential):
         :param checkpoint_save_steps: Will save a checkpoint after so many steps
         :param checkpoint_save_total_limit: Total number of checkpoints to store
         """
-
+        gchat_obj = GoogleChatAlert(alert_webhook)
         ##Add info to model card
         #info_loss_functions = "\n".join(["- {} with {} training examples".format(str(loss), len(dataloader)) for dataloader, loss in train_objectives])
         info_loss_functions =  []
@@ -756,7 +757,9 @@ class SentenceTransformer(nn.Sequential):
 
                 if checkpoint_path is not None and checkpoint_save_steps is not None and checkpoint_save_steps > 0 and global_step % checkpoint_save_steps == 0:
                     self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
-            print(f'avg training loss at epoch:{epoch} is {np.average(loss_at_each_epoch)} | lr : {last_learning_rate[0]}')
+            metrics_info = (f'avg training loss at epoch:{epoch} is {np.average(loss_at_each_epoch)} | lr : {last_learning_rate[0]}')
+            print(metrics_info)
+            gchat_obj.send_alert(metrics_info)
             self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
 
         if evaluator is None and output_path is not None:   #No evaluator, but output path: save final model version

@@ -8,6 +8,7 @@ from sklearn.metrics import average_precision_score
 import numpy as np
 from typing import List
 from ..readers import InputExample
+from ..google_chat_alert import GoogleChatAlert
 
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,11 @@ class BinaryClassificationEvaluator(SentenceEvaluator):
     :param write_csv: Write results to a CSV file
     """
 
-    def __init__(self, sentences1: List[str], sentences2: List[str], labels: List[int], name: str = '', batch_size: int = 32, show_progress_bar: bool = False, write_csv: bool = True):
+    def __init__(self, sentences1: List[str], sentences2: List[str], labels: List[int], name: str = '', batch_size: int = 32, show_progress_bar: bool = False, write_csv: bool = True, alert_webhook: str = None):
         self.sentences1 = sentences1
         self.sentences2 = sentences2
         self.labels = labels
-
+        self.gchat_alert_obj = GoogleChatAlert(alert_webhook)
         assert len(self.sentences1) == len(self.sentences2)
         assert len(self.sentences1) == len(self.labels)
         for label in labels:
@@ -122,7 +123,10 @@ class BinaryClassificationEvaluator(SentenceEvaluator):
         embeddings2_np = np.asarray(embeddings2)
         dot_scores = [np.dot(embeddings1_np[i], embeddings2_np[i]) for i in range(len(embeddings1_np))]
         f1_custom, accuracy_custom, mse_error = custom_metrics_on_go(predicted_cosine_dis, self.labels)
-        print(f'\ncosine sim loss (MSE) at epoch {epoch} validation is {mse_error} | f1 {f1_custom} | accuracy {accuracy_custom}')
+
+        metrics_info = (f'\ncosine sim loss (MSE) at epoch {epoch} validation is {mse_error} | f1 {f1_custom} | accuracy {accuracy_custom}')
+        self.gchat_alert_obj.send_alert(metrics_info)
+        print(metrics_info)
         labels = np.asarray(self.labels)
         output_scores = {}
         for short_name, name, scores, reverse in [['cossim', 'Cosine-Similarity', cosine_scores, True], ['manhattan', 'Manhattan-Distance', manhattan_distances, False], ['euclidean', 'Euclidean-Distance', euclidean_distances, False], ['dot', 'Dot-Product', dot_scores, True]]:

@@ -1,4 +1,5 @@
 from . import SentenceEvaluator
+from sklearn.metrics import mean_squared_error, f1_score, accuracy_score
 import logging
 import os
 import csv
@@ -80,9 +81,7 @@ class BinaryClassificationEvaluator(SentenceEvaluator):
 
         logger.info("Binary Accuracy Evaluation of the model on " + self.name + " dataset" + out_txt)
 
-        scores = self.compute_metrices(model)
-
-
+        scores = self.compute_metrices(model, epoch)
         #Main score is the max of Average Precision (AP)
         main_score = max(scores[short_name]['ap'] for short_name in scores)
 
@@ -108,22 +107,22 @@ class BinaryClassificationEvaluator(SentenceEvaluator):
         return main_score
 
 
-    def compute_metrices(self, model):
+    def compute_metrices(self, model, epoch):
         sentences = list(set(self.sentences1 + self.sentences2))
         embeddings = model.encode(sentences, batch_size=self.batch_size, show_progress_bar=self.show_progress_bar, convert_to_numpy=True)
         emb_dict = {sent: emb for sent, emb in zip(sentences, embeddings)}
         embeddings1 = [emb_dict[sent] for sent in self.sentences1]
         embeddings2 = [emb_dict[sent] for sent in self.sentences2]
-
-        cosine_scores = 1 - paired_cosine_distances(embeddings1, embeddings2)
+        predicted_cosine_dis = paired_cosine_distances(embeddings1, embeddings2)
+        cosine_scores = 1 - predicted_cosine_dis
         manhattan_distances = paired_manhattan_distances(embeddings1, embeddings2)
         euclidean_distances = paired_euclidean_distances(embeddings1, embeddings2)
 
         embeddings1_np = np.asarray(embeddings1)
         embeddings2_np = np.asarray(embeddings2)
         dot_scores = [np.dot(embeddings1_np[i], embeddings2_np[i]) for i in range(len(embeddings1_np))]
-
-
+        f1_custom, accuracy_custom, mse_error = custom_metrics_on_go(predicted_cosine_dis, self.labels)
+        print(f'\ncosine sim loss (MSE) at epoch {epoch} validation is {mse_error} | f1 {f1_custom} | accuracy {accuracy_custom}')
         labels = np.asarray(self.labels)
         output_scores = {}
         for short_name, name, scores, reverse in [['cossim', 'Cosine-Similarity', cosine_scores, True], ['manhattan', 'Manhattan-Distance', manhattan_distances, False], ['euclidean', 'Euclidean-Distance', euclidean_distances, False], ['dot', 'Dot-Product', dot_scores, True]]:
@@ -146,10 +145,7 @@ class BinaryClassificationEvaluator(SentenceEvaluator):
                 'recall': recall,
                 'ap': ap
             }
-
-
         return output_scores
-
 
 
     @staticmethod
@@ -215,3 +211,13 @@ class BinaryClassificationEvaluator(SentenceEvaluator):
 
         return best_f1, best_precision, best_recall, threshold
 
+
+def custom_metrics_on_go(predicted_cosine_dis, final_targets):
+    """
+    return custom metrics
+    """
+    mse_error = mean_squared_error(predicted_cosine_dis, final_targets)
+    final_predictions = list(map(lambda x: 1.0 if x >= 0.5 else 0.0, predicted_cosine_dis))
+    f1 = f1_score(final_targets,  final_predictions)
+    accuracy = accuracy_score(final_targets, final_predictions)
+    return f1, accuracy, mse_error

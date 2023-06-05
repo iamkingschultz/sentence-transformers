@@ -687,11 +687,10 @@ class SentenceTransformer(nn.Sequential):
         model_history = {"training": []}
         for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
             training_steps = 0
-
             for loss_model in loss_models:
                 loss_model.zero_grad()
                 loss_model.train()
-
+            loss_at_each_epoch = []
             for steps in trange(steps_per_epoch, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
                 for train_idx in range(num_train_objectives):
                     loss_model = loss_models[train_idx]
@@ -735,6 +734,7 @@ class SentenceTransformer(nn.Sequential):
                     # training logs
                     last_learning_rate = scheduler.get_last_lr()
                     training_loss = loss_value.item()
+                    loss_at_each_epoch.append(training_loss)
                     loss_details = {
                         "epoch": epoch,
                         "steps": steps,
@@ -745,10 +745,8 @@ class SentenceTransformer(nn.Sequential):
                     if log_losses_at_each_step:
                         print(str(loss_details))
                     model_history["training"].append(loss_details)
-
                 training_steps += 1
                 global_step += 1
-
                 if evaluation_steps > 0 and training_steps % evaluation_steps == 0:
                     self._eval_during_training(evaluator, output_path, save_best_model, epoch, training_steps, callback)
 
@@ -758,8 +756,7 @@ class SentenceTransformer(nn.Sequential):
 
                 if checkpoint_path is not None and checkpoint_save_steps is not None and checkpoint_save_steps > 0 and global_step % checkpoint_save_steps == 0:
                     self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
-
-
+            print(f'avg training loss at epoch:{epoch} is {np.average(loss_at_each_epoch)} | lr : {last_learning_rate[0]}')
             self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
 
         if evaluator is None and output_path is not None:   #No evaluator, but output path: save final model version

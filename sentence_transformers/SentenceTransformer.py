@@ -30,6 +30,7 @@ from . import __version__
 
 logger = logging.getLogger(__name__)
 
+
 class SentenceTransformer(nn.Sequential):
     """
     Loads or create a SentenceTransformer model, that can be used to map sentences / text to embeddings.
@@ -591,10 +592,11 @@ class SentenceTransformer(nn.Sequential):
             show_progress_bar: bool = True,
             checkpoint_path: str = None,
             checkpoint_save_steps: int = 500,
-            checkpoint_save_total_limit: int = 0
+            checkpoint_save_total_limit: int = 0,
+            log_losses_at_each_step=False
             ):
         """
-        Train the model with the given training objective
+        Train the model with the given training objective and return model training history
         Each training objective is sampled in turn for one batch.
         We sample only as many batches from each objective as there are in the smallest one
         to make sure of equal training with each dataset.
@@ -682,6 +684,7 @@ class SentenceTransformer(nn.Sequential):
         num_train_objectives = len(train_objectives)
 
         skip_scheduler = False
+        model_history = {"training": []}
         for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
             training_steps = 0
 
@@ -689,7 +692,7 @@ class SentenceTransformer(nn.Sequential):
                 loss_model.zero_grad()
                 loss_model.train()
 
-            for _ in trange(steps_per_epoch, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
+            for steps in trange(steps_per_epoch, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
                 for train_idx in range(num_train_objectives):
                     loss_model = loss_models[train_idx]
                     optimizer = optimizers[train_idx]
@@ -729,6 +732,19 @@ class SentenceTransformer(nn.Sequential):
 
                     if not skip_scheduler:
                         scheduler.step()
+                    # training logs
+                    last_learning_rate = scheduler.get_last_lr()
+                    training_loss = loss_value.item()
+                    loss_details = {
+                        "epoch": epoch,
+                        "steps": steps,
+                        "train_idx": train_idx,
+                        "training_steps": training_steps,
+                        'lr': last_learning_rate,
+                        "loss_value": training_loss}
+                    if log_losses_at_each_step:
+                        print(str(loss_details))
+                    model_history["training"].append(loss_details)
 
                 training_steps += 1
                 global_step += 1
@@ -751,6 +767,7 @@ class SentenceTransformer(nn.Sequential):
 
         if checkpoint_path is not None:
             self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
+        return model_history
 
 
 

@@ -760,13 +760,15 @@ class SentenceTransformer(nn.Sequential):
             metrics_info = (f'avg training loss at epoch:{epoch} is {np.average(loss_at_each_epoch)} | lr : {last_learning_rate[0]}')
             print(metrics_info)
             gchat_obj.send_alert(metrics_info)
+            # save model after every epoch
+            self._save_checkpoint(checkpoint_path, epochs, epoch)
             self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
 
         if evaluator is None and output_path is not None:   #No evaluator, but output path: save final model version
             self.save(output_path)
 
-        if checkpoint_path is not None:
-            self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
+        # if checkpoint_path is not None:
+        #     self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
         return model_history
 
 

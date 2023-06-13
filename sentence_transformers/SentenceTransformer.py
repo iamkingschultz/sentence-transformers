@@ -760,8 +760,7 @@ class SentenceTransformer(nn.Sequential):
                     self.save_best_validation_model(
                         avg_validation_loss_on_step,
                         checkpoint_path,
-                        global_step,
-                        gchat_obj)
+                        global_step)
                     if early_stopper.early_stop_validation_loss(avg_validation_loss_on_step):
                         stop_info = (f'stopping at training step {training_steps} of epoch:{epoch} due no improvement in validation loss')
                         print(stop_info)
@@ -810,7 +809,7 @@ class SentenceTransformer(nn.Sequential):
         avg_validation_loss = np.array(validation_losses).mean()
         return avg_validation_loss
 
-    def save_best_validation_model(self, validation_loss, checkpoint_path, step, gchat_obj):
+    def save_best_validation_model(self, validation_loss, checkpoint_path, step):
         if validation_loss < self.best_validation_loss:
             self.best_validation_loss = validation_loss
             previous_best_step = self.best_global_step_with_valid_loss
@@ -822,7 +821,6 @@ class SentenceTransformer(nn.Sequential):
             self.save(os.path.join(checkpoint_path, str(step)))
             save_info = (f"saved best model for valid loss {validation_loss} at step {step}")
             print(save_info)
-            gchat_obj.send_alert(save_info)
 
     def evaluate(self, evaluator: SentenceEvaluator, output_path: str = None):
         """

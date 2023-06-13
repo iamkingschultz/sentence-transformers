@@ -817,7 +817,7 @@ class SentenceTransformer(nn.Sequential):
             previous_check_point_path = os.path.join(checkpoint_path, str(previous_best_step))
             self.best_global_step_with_valid_loss = step
             if os.path.exists(previous_check_point_path):
-                os.remove(previous_check_point_path)
+                shutil.rmtree(previous_check_point_path)
             print(f"removed {previous_check_point_path} path")
             self.save(os.path.join(checkpoint_path, str(step)))
             save_info = (f"saved best model for valid loss {validation_loss} at step {step}")

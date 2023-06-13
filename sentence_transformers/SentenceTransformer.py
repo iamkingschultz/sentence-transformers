@@ -755,7 +755,7 @@ class SentenceTransformer(nn.Sequential):
                     model_history["training"].append(loss_details)
                 training_steps += 1
                 global_step += 1
-                if validation_evaluation_steps > global_step:
+                if global_step > validation_evaluation_steps:
                     avg_validation_loss_on_step = self.validation_loss_evaluator(loss_model, validation_data_loaders)
                     self.save_best_validation_model(
                         avg_validation_loss_on_step,
@@ -783,7 +783,8 @@ class SentenceTransformer(nn.Sequential):
             valid_metrics_info = (f'avg validation loss at epoch:{epoch} is {avg_validation_loss}')
             print(valid_metrics_info)
             gchat_obj.send_alert(valid_metrics_info)
-            self._save_checkpoint(checkpoint_path, epochs, epoch)
+            # save model after each epoch
+            self.save(os.path.join(checkpoint_path, f'epoch_{epoch}'))
             self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
 
         if evaluator is None and output_path is not None:   #No evaluator, but output path: save final model version

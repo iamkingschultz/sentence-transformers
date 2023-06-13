@@ -24,6 +24,7 @@ from .google_chat_alert import GoogleChatAlert
 from . import __MODEL_HUB_ORGANIZATION__
 from .evaluation import SentenceEvaluator
 from .util import import_from_string, batch_to_device, fullname, snapshot_download
+from.early_stopper import EarlyStopper
 from .models import Transformer, Pooling, Dense
 from .model_card_templates import ModelCardTemplate
 from . import __version__
@@ -575,6 +576,7 @@ class SentenceTransformer(nn.Sequential):
 
     def fit(self,
             train_objectives: Iterable[Tuple[DataLoader, nn.Module]],
+            validation_data_loaders: DataLoader,
             evaluator: SentenceEvaluator = None,
             epochs: int = 1,
             steps_per_epoch = None,
@@ -595,6 +597,8 @@ class SentenceTransformer(nn.Sequential):
             checkpoint_save_total_limit: int = 0,
             log_losses_at_each_step=False,
             alert_webhook: str = None,
+            validation_evaluation_steps=None,
+            early_stopping_patience: int = 50
             ):
         """
         Train the model with the given training objective and return model training history
@@ -625,6 +629,7 @@ class SentenceTransformer(nn.Sequential):
         :param checkpoint_save_total_limit: Total number of checkpoints to store
         """
         gchat_obj = GoogleChatAlert(alert_webhook)
+        early_stopper = EarlyStopper(patience=early_stopping_patience)
         ##Add info to model card
         #info_loss_functions = "\n".join(["- {} with {} training examples".format(str(loss), len(dataloader)) for dataloader, loss in train_objectives])
         info_loss_functions =  []
@@ -648,12 +653,13 @@ class SentenceTransformer(nn.Sequential):
         # Use smart batching
         for dataloader in dataloaders:
             dataloader.collate_fn = self.smart_batching_collate
-
         loss_models = [loss for _, loss in train_objectives]
         for loss_model in loss_models:
             loss_model.to(self._target_device)
 
         self.best_score = -9999999
+        self.best_validation_loss = np.inf
+        self.best_global_step_with_valid_loss = 0
 
         if steps_per_epoch is None or steps_per_epoch == 0:
             steps_per_epoch = min([len(dataloader) for dataloader in dataloaders])
@@ -741,6 +747,7 @@ class SentenceTransformer(nn.Sequential):
                         "steps": steps,
                         "train_idx": train_idx,
                         "training_steps": training_steps,
+                        "global_step": global_step,
                         'lr': last_learning_rate,
                         "loss_value": training_loss}
                     if log_losses_at_each_step:
@@ -748,19 +755,34 @@ class SentenceTransformer(nn.Sequential):
                     model_history["training"].append(loss_details)
                 training_steps += 1
                 global_step += 1
-                if evaluation_steps > 0 and training_steps % evaluation_steps == 0:
-                    self._eval_during_training(evaluator, output_path, save_best_model, epoch, training_steps, callback)
-
+                if validation_evaluation_steps > global_step:
+                    avg_validation_loss_on_step = self.validation_loss_evaluator(loss_model, validation_data_loaders)
+                    self.save_best_validation_model(
+                        avg_validation_loss_on_step,
+                        checkpoint_path,
+                        global_step,
+                        gchat_obj)
+                    if early_stopper.early_stop_validation_loss(avg_validation_loss_on_step):
+                        stop_info = (f'stopping at training step {training_steps} of epoch:{epoch} due no improvement in validation loss')
+                        print(stop_info)
+                        gchat_obj.send_alert(stop_info)
+                        return
+                # if evaluation_steps > 0 and training_steps % evaluation_steps == 0:
+                #     self._eval_during_training(evaluator, output_path, save_best_model, epoch, training_steps, callback)
                     for loss_model in loss_models:
                         loss_model.zero_grad()
                         loss_model.train()
-
+                
                 if checkpoint_path is not None and checkpoint_save_steps is not None and checkpoint_save_steps > 0 and global_step % checkpoint_save_steps == 0:
                     self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
             metrics_info = (f'avg training loss at epoch:{epoch} is {np.average(loss_at_each_epoch)} | lr : {last_learning_rate[0]}')
             print(metrics_info)
             gchat_obj.send_alert(metrics_info)
             # save model after every epoch
+            avg_validation_loss = self.validation_loss_evaluator(loss_model, validation_data_loaders)
+            valid_metrics_info = (f'avg validation loss at epoch:{epoch} is {avg_validation_loss}')
+            print(valid_metrics_info)
+            gchat_obj.send_alert(valid_metrics_info)
             self._save_checkpoint(checkpoint_path, epochs, epoch)
             self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
 
@@ -771,7 +793,35 @@ class SentenceTransformer(nn.Sequential):
         #     self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)
         return model_history
 
+    def validation_loss_evaluator(self, loss_model, valid_data_loaders):
+        """
+        custom validation loss evaulator
+        """
+        loss_model.eval()
+        validation_losses = []
+        with torch.no_grad():
+            for data in valid_data_loaders:
+                features, labels = data
+                labels = labels.to(self._target_device)
+                features = list(map(lambda batch: batch_to_device(batch, self._target_device), features))
+                validation_loss = loss_model(features, labels)
+                validation_losses.append(validation_loss.item())
+        avg_validation_loss = np.array(validation_losses).mean()
+        return avg_validation_loss
 
+    def save_best_validation_model(self, validation_loss, checkpoint_path, step, gchat_obj):
+        if validation_loss < self.best_validation_loss:
+            self.best_validation_loss = validation_loss
+            previous_best_step = self.best_global_step_with_valid_loss
+            previous_check_point_path = os.path.join(checkpoint_path, str(previous_best_step))
+            self.best_global_step_with_valid_loss = step
+            if os.path.exists(previous_check_point_path):
+                os.remove(previous_check_point_path)
+            print(f"removed {previous_check_point_path} path")
+            self.save(os.path.join(checkpoint_path, str(step)))
+            save_info = (f"saved best model for valid loss {validation_loss} at step {step}")
+            print(save_info)
+            gchat_obj.send_alert(save_info)
 
     def evaluate(self, evaluator: SentenceEvaluator, output_path: str = None):
         """

@@ -12,16 +12,13 @@ logger = logging.getLogger(__name__)
 class LabelAccuracyEvaluator(SentenceEvaluator):
     """
     Evaluate a model based on its accuracy on a labeled dataset
-
     This requires a model with LossFunction.SOFTMAX
-
     The results are written in a CSV. If a CSV already exists, then values are appended.
     """
 
     def __init__(self, dataloader: DataLoader, name: str = "", softmax_model = None, write_csv: bool = True):
         """
         Constructs an evaluator for the given dataset
-
         :param dataloader:
             the data for the evaluation
         """

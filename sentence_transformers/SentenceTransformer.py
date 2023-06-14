@@ -16,6 +16,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 import torch.multiprocessing as mp
 from tqdm.autonotebook import trange
+from tqdm import tqdm
 import math
 import queue
 import tempfile
@@ -760,7 +761,8 @@ class SentenceTransformer(nn.Sequential):
                     self.save_best_validation_model(
                         avg_validation_loss_on_step,
                         checkpoint_path,
-                        global_step)
+                        global_step,
+                        last_learning_rate)
                     if early_stopper.early_stop_validation_loss(avg_validation_loss_on_step):
                         stop_info = (f'stopping at training step {training_steps} of epoch:{epoch} due no improvement in validation loss')
                         print(stop_info)
@@ -801,7 +803,7 @@ class SentenceTransformer(nn.Sequential):
         loss_model.eval()
         validation_losses = []
         with torch.no_grad():
-            for data in valid_data_loaders:
+            for data in tqdm(valid_data_loaders):
                 features, labels = data
                 labels = labels.to(self._target_device)
                 features = list(map(lambda batch: batch_to_device(batch, self._target_device), features))
@@ -810,7 +812,7 @@ class SentenceTransformer(nn.Sequential):
         avg_validation_loss = np.array(validation_losses).mean()
         return avg_validation_loss
 
-    def save_best_validation_model(self, validation_loss, checkpoint_path, step):
+    def save_best_validation_model(self, validation_loss, checkpoint_path, step, lr):
         if validation_loss < self.best_validation_loss:
             self.best_validation_loss = validation_loss
             previous_best_step = self.best_global_step_with_valid_loss
@@ -820,7 +822,7 @@ class SentenceTransformer(nn.Sequential):
                 shutil.rmtree(previous_check_point_path)
             print(f"removed {previous_check_point_path} path")
             self.save(os.path.join(checkpoint_path, str(step)))
-            save_info = (f"saved best model for valid loss {validation_loss} at step {step}")
+            save_info = (f"saved best model for valid loss {validation_loss} at step {step}: lr {lr}")
             print(save_info)
 
     def evaluate(self, evaluator: SentenceEvaluator, output_path: str = None):

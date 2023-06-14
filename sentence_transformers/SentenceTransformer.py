@@ -785,9 +785,9 @@ class SentenceTransformer(nn.Sequential):
             print(valid_metrics_info)
             gchat_obj.send_alert(valid_metrics_info)
             # save model after each epoch
-            json.dump(model_history, open(os.path.join(checkpoint_path, f'{epoch}_model_history.json'), 'w'))
             self.save(os.path.join(checkpoint_path, f'epoch_{epoch}'))
             self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
+            json.dump(model_history, open(os.path.join(checkpoint_path, f'{epoch}_model_history.json'), 'w'))
 
         if evaluator is None and output_path is not None:   #No evaluator, but output path: save final model version
             self.save(output_path)

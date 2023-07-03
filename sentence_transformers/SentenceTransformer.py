@@ -767,7 +767,7 @@ class SentenceTransformer(nn.Sequential):
                         stop_info = (f'stopping at training step {training_steps} of epoch:{epoch} due no improvement in validation loss')
                         print(stop_info)
                         gchat_obj.send_alert(stop_info)
-                        return
+                        return model_history
                 # if evaluation_steps > 0 and training_steps % evaluation_steps == 0:
                 #     self._eval_during_training(evaluator, output_path, save_best_model, epoch, training_steps, callback)
                     for loss_model in loss_models:
